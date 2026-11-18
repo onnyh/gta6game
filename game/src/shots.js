@@ -1,117 +1,82 @@
-// Coral Bay Heat — the screenshot scenes. With ?shot=<name> the game skips its title,
-// stages a real moment of play with the ordinary systems (traffic, police, missions),
-// runs it forward a fixed number of fixed-length steps under a simple pilot, and
-// renders the resulting frame. Nothing is drawn by hand for the camera: the cover is
-// the game, caught mid-chase, mid-job, mid-drive.
-import { hRoadCenter, vRoadCenter } from './city.js';
-import { makeCar } from './vehicles.js';
-import { forceStars } from './police.js';
-import { clamp, angleDelta } from './rng.js';
+// Bayu Heat — staged screenshot scenes. Loading the game with ?shot=<name>
+// arranges one deterministic scene (the same seed-7 city every time) and
 
-/** Drive toward a heading while the shot runs: full throttle, gentle corrections. */
-function drivePilot(heading) {
-  return (game) => {
-    const car = game.player.car;
-    if (!car) return { throttle: 0, steer: 0 };
-    const steer = clamp(angleDelta(car.angle, heading) * 2.4, -1, 1);
-    return { throttle: 0.88, steer };
-  };
-}
+import { MISSIONS } from './missions.js';
+import { createVehicle } from './vehicles.js';
+import { groundH } from './city.js';
 
-function addCruiser(game, x, y, angle) {
-  const car = makeCar('police', '#f2f2f0', x, y, angle, 'police');
-  car.ai = { ti: 3, tj: 3, mode: 'hunt', officer: null, stuckT: 0, lastX: x, lastY: y };
-  car.speed = 210;
-  game.cars.push(car);
-  return car;
-}
+export function setupShots(ctx) {
+  const name = new URLSearchParams(location.search).get('shot');
+  if (!name) return;
+  const { G, player, police, missions, hud, vehicles, startGame, openPause, camera } = ctx;
+  const ready = (ms) => setTimeout(() => {
+    if (ctx.refreshHud) ctx.refreshHud();
+    setTimeout(() => { document.title = `SHOT READY ${name}`; }, 350);
+  }, ms);
 
-/**
- * Stage the named scene on a fresh game and return { steps, pilot }:
- * main.js runs `steps` fixed steps, asking `pilot` for the player's controls.
- */
-export function stageShot(game, name) {
-  const p = game.player;
-  const garage = game.city.landmarks.garage.door;
-  game.state = 'play';
+  if (name === 'title') { ready(1400); return; }
 
   if (name === 'chase') {
-    // Four stars on a downtown avenue: Dani runs the stolen coupe north toward the
-    // warehouse drop, and the CBPD pours in behind.
-    const roadX = vRoadCenter(3);
-    const car = makeCar('coupe', '#19d3c5', roadX + 17, hRoadCenter(5) + 120, -Math.PI / 2, 'mission');
-    car.hp = 400;
-    car.maxHp = 400;
-    game.cars.push(car);
-    p.car = car;
-    p.x = car.x;
-    p.y = car.y;
-    addCruiser(game, roadX - 17, hRoadCenter(5) + 260, -Math.PI / 2);
-    addCruiser(game, roadX - 17, hRoadCenter(6) + 60, -Math.PI / 2);
-    addCruiser(game, vRoadCenter(2) + 17, hRoadCenter(5) + 420, -Math.PI / 2);
-    forceStars(game, 4);
-    game.wanted.seen = true;
-    p.money = 1875;
-    p.hasPistol = true;
-    game.mission.index = 1;
-    game.mission.phase = 'active';
-    game.mission.stepIndex = 1;
-    game.mission.carId = car.id;
-    game.mission.spiked = true;
-    return { steps: 66, pilot: drivePilot(-Math.PI / 2) };
+    startGame(true);
+    G.money = 4875000; G.rep = 1450; G.hasPistol = true; G.ammo = 9; G.reserve = 24; G.weapon = 2;
+    G.health = 82; G.armour = 45; G.clockMin = 17 * 60 + 41;
+    G.missionIndex = 5;
+    missions.active = MISSIONS[5]; missions.stageIdx = 1; missions.timer = 134;
+    const hero = vehicles.find((v) => v.type === 'aleron' && v.owned) || vehicles.find((v) => v.type === 'aleron');
+    hero.x = 448; hero.z = 252; hero.heading = Math.PI; hero.driver = 'player';
+    player.vehicle = hero; player.onFoot = false;
+    player.x = hero.x; player.z = hero.z; player.heading = Math.PI;
+    const cruisers = [];
+    for (let i = 0; i < 3; i++) {
+      const c = createVehicle('cruiser', 0);
+      c.driver = 'police'; c.heading = Math.PI;
+      ctx.scene.add(c.group);
+      vehicles.push(c); cruisers.push(c);
+    }
+    ctx.damar.group.visible = false;
+    police.setStars(4);
+    const pin = setInterval(() => {
+      hero.x = 448; hero.z = 252; hero.heading = Math.PI;
+      hero.vx = 0; hero.vz = -30; hero.speed = 30; hero.y = 0;
+      player.x = 448; player.z = 252; player.heading = Math.PI; player.speed = 30;
+      const spots = [[441, 231, Math.PI - 0.35], [455.5, 225, Math.PI + 0.35], [452, 270, Math.PI]];
+      cruisers.forEach((c, i) => {
+        c.x = spots[i][0]; c.z = spots[i][1]; c.heading = spots[i][2];
+        c.vx = Math.sin(c.heading) * -29; c.vz = Math.cos(c.heading) * -29; c.speed = 29; c.y = 0;
+      });
+      G.lastSeenAt = G.time; G.lastKnownX = player.x; G.lastKnownZ = player.z;
+    }, 50);
+    setTimeout(() => clearInterval(pin), 6400);
+    ready(5800);
+    return;
   }
 
-  if (name === 'mission') {
-    // The briefing: Dani on foot at Rosa's garage, the first job's dialogue open.
-    p.x = garage.x + 6;
-    p.y = garage.y + 4;
-    p.faceAngle = -Math.PI / 2;
-    const car = makeCar('coupe', '#e2703a', garage.x - 70, garage.y + 26, 0.2, 'parked');
-    game.cars.push(car);
-    p.money = 120;
-    game.mission.phase = 'intro';
-    game.mission.dialogue = {
-      speaker: 'Rosa Delgado',
-      lines: game.missions[0].intro,
-      index: 1,
-      after: 'intro',
-    };
-    game.dialogueLock = true;
-    return { steps: 12, pilot: null };
+  if (name === 'foot') {
+    startGame(true);
+    G.money = 1625000; G.rep = 320; G.health = 100; G.clockMin = 17 * 60 + 52;
+    player.x = 258; player.z = 158; player.heading = 2.9; player.y = groundH(player.x, player.z);
+    ctx.setCamYaw(2.9);
+    const angkot = vehicles.find((v) => v.type === 'angkot');
+    if (angkot) { angkot.x = 251; angkot.z = 138; angkot.heading = 0.35; angkot.y = groundH(angkot.x, angkot.z); }
+    hud.showDialogue([
+      ['RATNA SARI', 'Damar, the Pasar Baru crates move at maghrib. Be there — and jangan telat, the tide will not wait.'],
+      ['DAMAR', 'I am never late, Ratna. I am dramatically timed.'],
+    ], () => {});
+    ready(4200);
+    return;
   }
 
-  if (name === 'heist') {
-    // Inside the Trust job: the holdout clock running down, CBPD arriving in force.
-    const bank = game.city.landmarks.bank.door;
-    p.x = bank.x;
-    p.y = bank.y + 10;
-    p.faceAngle = Math.PI / 2;
-    p.hasPistol = true;
-    p.weapon = 'pistol';
-    p.money = 2050;
-    game.mission.index = 3;
-    game.mission.phase = 'active';
-    game.mission.stepIndex = 1;
-    game.mission.stepT = 17;
-    forceStars(game, 4);
-    addCruiser(game, bank.x - 150, bank.y + 190, -0.5);
-    addCruiser(game, bank.x + 190, bank.y + 230, 2.6);
-    return { steps: 42, pilot: null };
+  if (name === 'map') {
+    startGame(true);
+    G.money = 3210000; G.rep = 980; G.missionIndex = 3; G.summit = true; G.stats.summits = 1;
+    G.stats.missionsDone = 3; G.stats.stolen = 4; G.stats.earned = 4750000; G.stats.topSpeed = 148;
+    G.stashesFound = ['dermaga', 'pasar', 'alun'];
+    player.x = 210; player.z = 176; player.y = groundH(player.x, player.z);
+    openPause('map');
+    ready(1400);
+    return;
   }
 
-  // 'cover' and anything else: the sunset drive along Ocean Drive, a job on the clock.
-  const car = makeCar('sport', '#3fb7c9', 330, hRoadCenter(7) + 17, 0, 'parked');
-  game.cars.push(car);
-  p.car = car;
-  p.x = car.x;
-  p.y = car.y;
-  p.money = 640;
-  p.hasPistol = true;
-  game.mission.index = 0;
-  game.mission.phase = 'active';
-  game.mission.stepIndex = 1;
-  game.mission.hasPackage = true;
-  forceStars(game, 2);
-  addCruiser(game, 120, hRoadCenter(7) - 17, 0);
-  return { steps: 84, pilot: drivePilot(0) };
+  ready(800);
+  void camera;
 }

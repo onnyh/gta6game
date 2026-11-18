@@ -1,50 +1,43 @@
-// Coral Bay Heat — the save game, in the browser's localStorage.
-// What persists: money, story progress, health, where Dani is standing, which cash
-// stashes are already looted, and whether the pistol has been earned. Settings
-// (mute) live under their own key. Every access is guarded: a browser that refuses
-// storage simply plays without saving.
-import { SAVE_KEY, SETTINGS_KEY } from './config.js';
+// Bayu Heat — the save game: one localStorage slot holding Damar's money,
+// REP, story progress, the pistol, the summit flag, stashes and statistics.
+
+import { G } from './state.js';
+
+const KEY = 'bayuheat-save-v1';
+
+export function hasSave() {
+  try { return !!localStorage.getItem(KEY); } catch { return false; }
+}
+
+export function saveGame(player) {
+  try {
+    localStorage.setItem(KEY, JSON.stringify({
+      money: G.money, rep: G.rep, missionIndex: G.missionIndex, storyDone: G.storyDone,
+      hasPistol: G.hasPistol, ammo: G.ammo, reserve: G.reserve,
+      health: G.health, armour: G.armour, summit: G.summit,
+      stashesFound: G.stashesFound, stats: G.stats,
+      clockMin: G.clockMin, dow: G.dow,
+      px: player.x, pz: player.z, heading: player.heading,
+    }));
+    return true;
+  } catch { return false; }
+}
 
 export function loadSave() {
   try {
-    const raw = window.localStorage.getItem(SAVE_KEY);
-    if (!raw) return null;
-    const data = JSON.parse(raw);
-    if (typeof data !== 'object' || data === null) return null;
-    return data;
-  } catch {
-    return null;
-  }
+    const raw = localStorage.getItem(KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
 }
 
-export function writeSave(data) {
-  try {
-    window.localStorage.setItem(SAVE_KEY, JSON.stringify(data));
-  } catch {
-    /* storage unavailable: play on unsaved */
-  }
-}
-
-export function clearSave() {
-  try {
-    window.localStorage.removeItem(SAVE_KEY);
-  } catch {
-    /* nothing to clear */
-  }
-}
-
-export function loadMuted() {
-  try {
-    return window.localStorage.getItem(SETTINGS_KEY) === 'muted';
-  } catch {
-    return false;
-  }
-}
-
-export function writeMuted(muted) {
-  try {
-    window.localStorage.setItem(SETTINGS_KEY, muted ? 'muted' : 'sound');
-  } catch {
-    /* ignore */
-  }
+export function applySave(data, player) {
+  if (!data) return;
+  G.money = data.money; G.rep = data.rep; G.missionIndex = data.missionIndex;
+  G.storyDone = data.storyDone; G.hasPistol = data.hasPistol;
+  G.ammo = data.ammo; G.reserve = data.reserve;
+  G.health = data.health; G.armour = data.armour || 0;
+  G.summit = !!data.summit; G.stashesFound = data.stashesFound || [];
+  Object.assign(G.stats, data.stats || {});
+  G.clockMin = data.clockMin || G.clockMin; G.dow = data.dow ?? G.dow;
+  player.x = data.px; player.z = data.pz; player.heading = data.heading || 0;
 }
