@@ -25,9 +25,15 @@ export const G = {
   storyDone: false,
   summit: false,
   stashesFound: [],
+  // Gunung Bayu expedition kit: a bottle to keep filled, a torch for the
+  // cave, and the player's best timed climb (seconds) for the basecamp board.
+  water: 100,
+  gear: { bottle: false, torch: false },
+  bestClimb: null,
+  climbStart: 0,
   stats: {
     earned: 0, stolen: 0, topSpeed: 0, arrests: 0, deaths: 0,
-    missionsDone: 0, playSeconds: 0, shotsFired: 0, hitsLanded: 0, summits: 0,
+    missionsDone: 0, playSeconds: 0, shotsFired: 0, hitsLanded: 0, summits: 0, mtFalls: 0,
   },
   settings: { muted: false },
 };

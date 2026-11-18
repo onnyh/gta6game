@@ -10,6 +10,7 @@ import {
   buildCity, collideCircle, groundH, terrainGradient, TRAIL, polylinePoint,
 } from './city.js';
 import { buildWorld } from './world.js';
+import { buildMountain, fmtClimb } from './mountain.js';
 import { createVehicle, stepVehicle, damageVehicle, updateVehicleVisual } from './vehicles.js';
 import { createHuman } from './actors.js';
 import { GameAudio } from './audio.js';
@@ -46,6 +47,9 @@ window.addEventListener('resize', () => {
 
 const layout = buildCity(7);
 const world = buildWorld(scene, layout);
+const mountain = buildMountain(scene, layout.colliders);
+const torchLight = new THREE.PointLight(0xffa845, 0, 30, 1.5);
+scene.add(torchLight);
 const footColliders = layout.colliders;
 const carColliders = [...layout.colliders, { x0: 136, z0: -147, x1: 156, z1: -140.5 }];
 
@@ -57,6 +61,7 @@ const player = {
 player.y = groundH(player.x, player.z);
 
 if (hasSave()) { const d = loadSave(); if (d) applySave(d, player); }
+if (G.bestClimb != null) mountain.board.setPlayerBest(G.bestClimb);
 
 const damar = createHuman({ skin: 0x96684a, shirt: 0xc23b2e, pants: 0x23262e, hair: 0x14100c });
 scene.add(damar.group);
@@ -66,7 +71,7 @@ function standNpc(opts, x, z, heading) {
   h.group.position.set(x, groundH(x, z), z);
   h.group.rotation.y = heading;
   scene.add(h.group);
-  return { human: h, x, z, heading };
+  return { human: h, x, z, heading, baseY: groundH(x, z) };
 }
 const ratna = standNpc({ skin: 0xa06844, shirt: 0x2e8f6e, pants: 0x2c3242, hair: 0x1c1410, dress: 0x2e8f6e }, RATNA_POS.x, RATNA_POS.z, 2.6);
 const sari = standNpc({ skin: 0xbd8552, shirt: 0xe8a03c, pants: 0x3a3f4c, hair: 0x241a12, dress: 0xe8a03c }, 282, 292, 0.4);
@@ -344,6 +349,22 @@ function tryPunch() {
 let sideSummit = false;         // Pak Darto's photo job
 const postsPassed = new Set();
 const POSTS = [0.3, 0.55, 0.8];
+let falling = 0;                                   // seconds left in a fall off the jalur
+let checkpoint = { t: 0, label: 'BASECAMP' };      // last Pos touched — falls respawn here
+let lastRockHit = -9;
+
+function respawnAtCheckpoint() {
+  const p = checkpoint.t > 0 ? polylinePoint(TRAIL, checkpoint.t) : { x: BASECAMP.x, z: BASECAMP.z };
+  player.x = p.x; player.z = p.z;
+  player.y = groundH(p.x, p.z);
+  const bi = mountain.bridgeInfoAt(p.x, p.z);
+  if (bi) player.y = bi.deckY;
+  player.speed = 0;
+  G.stats.mtFalls++;
+  hud.toast('JATUH!', `Back to ${checkpoint.label} — hati-hati di jalur, pendaki`);
+  audio.blip(300, 0.12, 0.12);
+}
+
 function updateMountain(dt) {
   if (player.onFoot && player.z < -100) {
     POSTS.forEach((tt, i) => {
@@ -351,27 +372,64 @@ function updateMountain(dt) {
       const p = polylinePoint(TRAIL, tt);
       if (Math.hypot(player.x - p.x, player.z - p.z) < 9) {
         postsPassed.add(i);
+        checkpoint = { t: tt, label: `POS ${i + 1}` };
         hud.toast(`POS ${i + 1}`, i === 2 ? 'Thin air now. The puncak is close.' : 'Jalur pendakian Gunung Bayu');
         audio.blip(840, 0.06, 0.09);
       }
     });
   }
-  if (player.z > -60) postsPassed.clear();
-  if (!G.summit && player.onFoot && Math.hypot(player.x - SUMMIT.x, player.z - SUMMIT.z) < 9) {
-    G.summit = true; G.stats.summits = 1;
-    world.flagPlanted = true;
-    G.money += 500000; G.rep += 150; G.stats.earned += 500000;
-    audio.jingle('summit');
-    let sub = 'Summit Bonus — Rp 500.000 · REP +150';
-    if (sideSummit) {
-      sideSummit = false;
-      G.money += 750000; G.rep += 200; G.stats.earned += 750000;
-      sub = 'Summit Bonus Rp 500.000 + Photo Bonus Rp 750.000 — Pak Darto will love these';
+  if (player.z > -60) { postsPassed.clear(); checkpoint = { t: 0, label: 'BASECAMP' }; G.climbStart = 0; }
+  if (player.onFoot && !G.climbStart && Math.hypot(player.x - TRAIL[0][0], player.z - TRAIL[0][1]) < 15) G.climbStart = G.time;
+  if (Math.hypot(player.x - BASECAMP.x, player.z - BASECAMP.z) < 9) G.climbStart = 0;
+  if (player.onFoot && Math.hypot(player.x - SUMMIT.x, player.z - SUMMIT.z) < 9 && (!G.summit || G.climbStart > 0)) {
+    let sub = '';
+    if (!G.summit) {
+      G.summit = true; G.stats.summits = 1;
+      world.flagPlanted = true;
+      G.money += 500000; G.rep += 150; G.stats.earned += 500000;
+      audio.jingle('summit');
+      sub = 'Summit Bonus — Rp 500.000 · REP +150';
+      if (sideSummit) {
+        sideSummit = false;
+        G.money += 750000; G.rep += 200; G.stats.earned += 750000;
+        sub = 'Summit Bonus Rp 500.000 + Photo Bonus Rp 750.000 — Pak Darto will love these';
+      }
+    }
+    if (G.climbStart > 0 && G.time - G.climbStart > 20) {
+      const ct = G.time - G.climbStart;
+      const rank = mountain.board.recordTime(ct);
+      if (!G.bestClimb || ct < G.bestClimb) G.bestClimb = ct;
+      sub += `${sub ? ' · ' : ''}Climb ${fmtClimb(ct)}${rank <= 5 ? ` — PENDAKI TERCEPAT #${rank} at Basecamp!` : ''}`;
+      G.climbStart = 0;
     }
     hud.banner('PUNCAK — GUNUNG BAYU', sub, 3.4);
     saveGame(player);
   }
-  void dt;
+  mountain.update(dt, G.time, player, {
+    onBark: (line) => hud.toast(line, '— pendaki Gunung Bayu', 2.6),
+    onRumble: () => audio.thud(0.7, 70, 0.5),
+  });
+  const cave = player.onFoot ? mountain.caveAt(player.x, player.z) : 0;
+  torchLight.position.set(player.x, player.y + 1.7, player.z);
+  torchLight.intensity = player.onFoot && G.gear.torch ? (cave > 0.05 ? 55 : player.z < -60 ? 13 : 0) : 0;
+  hud.setCave(player.onFoot ? cave * (G.gear.torch ? 0.3 : 1) : 0);
+  if (player.onFoot && G.time - lastRockHit > 1.2) {
+    for (const rock of mountain.rocks) {
+      if (!rock.active) continue;
+      if (Math.hypot(rock.x - player.x, rock.z - player.z) < 1.35 && Math.abs(rock.y - player.y) < 2.4) {
+        lastRockHit = G.time;
+        G.stamina = Math.max(0, G.stamina - 25);
+        const dx = player.x - rock.x, dz = player.z - rock.z, dl = Math.hypot(dx, dz) || 1;
+        const fixed = collideCircle(player.x + (dx / dl) * 2.4, player.z + (dz / dl) * 2.4, 0.55, footColliders);
+        player.x = fixed.x; player.z = fixed.z; player.y = groundH(player.x, player.z);
+        hud.flashDamage();
+        audio.crash(0.5);
+        hud.toast('KENA LONGSOR!', 'Take cover behind the big boulders');
+        if (combat.damagePlayer(10)) onWasted();
+        break;
+      }
+    }
+  }
 }
 
 function updateInteractions(pressE, pressF) {
@@ -392,6 +450,31 @@ function updateInteractions(pressE, pressF) {
           ['DAMAR', 'You want something from the top, Pak?'],
           ['PAK DARTO', 'Foto dari puncak! Plant the flag, take the view in. I pay Rp 750.000 for a summit story at my warung.'],
         ], () => { sideSummit = true; hud.toast('SIDE JOB — SUMMIT PHOTOS', 'Reach the puncak of Gunung Bayu'); });
+      }
+    }
+    if (!prompt && !G.gear.bottle && Math.hypot(player.x - mountain.gearBottle.x, player.z - mountain.gearBottle.z) < 2.4) {
+      prompt = '<b>E</b> — Take the water bottle (botol air)';
+      if (pressE) {
+        G.gear.bottle = true; G.water = 100;
+        mountain.gearBottle.mesh.visible = false;
+        audio.blip(880, 0.07, 0.1);
+        hud.toast('BOTOL AIR', 'Keep it filled — drums at Basecamp and every Pos');
+      }
+    }
+    if (!prompt && !G.gear.torch && Math.hypot(player.x - mountain.gearTorch.x, player.z - mountain.gearTorch.z) < 2.4) {
+      prompt = '<b>E</b> — Take the torch (senter)';
+      if (pressE) {
+        G.gear.torch = true;
+        mountain.gearTorch.mesh.visible = false;
+        audio.blip(880, 0.07, 0.1);
+        hud.toast('SENTER', 'For the cave on the jalur — and the dark stretches');
+      }
+    }
+    if (!prompt && G.gear.bottle && G.water < 99) {
+      const drum = mountain.refills.find((r) => Math.hypot(player.x - r.x, player.z - r.z) < 2.4);
+      if (drum) {
+        prompt = '<b>E</b> — Refill water (isi air)';
+        if (pressE) { G.water = 100; audio.blip(760, 0.07, 0.1); hud.toast('BOTOL PENUH', 'Hydrated. Semangat, pendaki!'); }
       }
     }
     if (!prompt) {
@@ -418,23 +501,28 @@ function updateOnFoot(dt) {
   let mx = 0, mz = 0;
   if (f || r) {
     const fx = Math.sin(camYaw), fz = Math.cos(camYaw);
-    const rx = Math.cos(camYaw), rz = -Math.sin(camYaw);
+    const rx = -Math.cos(camYaw), rz = Math.sin(camYaw);   // screen-right of the camera (mirrored in v2)
     mx = fx * f + rx * r; mz = fz * f + rz * r;
     const len = Math.hypot(mx, mz) || 1; mx /= len; mz /= len;
     player.heading = Math.atan2(mx, mz);
   }
   const grad = terrainGradient(player.x, player.z);
-  const uphill = grad.x * mx + grad.z * mz;
+  const uphill = grad.gx * mx + grad.gz * mz;
   let speed = 5.6;
   if (uphill > 0.02) speed *= clamp(1 - uphill * 1.15, 0.34, 1);
   if (uphill < -0.05) speed *= 1.3; // descending is faster
   const climbing = player.z < -4 && uphill > 0.1 && (f || r);
+  // Hydration: no bottle (or an empty one) on Gunung Bayu burns stamina fast.
+  const dry = player.z < -100 && (!G.gear.bottle || G.water <= 0);
   if (climbing && !exhausted) {
-    G.stamina = Math.max(0, G.stamina - (uphill > 0.25 ? 6 : 2.5) * dt);
+    G.stamina = Math.max(0, G.stamina - (uphill > 0.25 ? 4.5 : 2) * (dry ? 2.2 : 1) * dt);
     if (G.stamina <= 0) exhausted = true; // crawl until 25 comes back
   } else {
     G.stamina = Math.min(100, G.stamina + 10 * dt);
     if (exhausted && G.stamina >= 25) exhausted = false;
+  }
+  if (G.gear.bottle && player.z < -100 && (f || r)) {
+    G.water = Math.max(0, G.water - (climbing ? 2.4 : 1.1) * dt);
   }
   if (exhausted) speed = Math.min(speed, 1.1);
   const moving = (f || r) && speed > 0;
@@ -447,11 +535,32 @@ function updateOnFoot(dt) {
     player.z = clamp(fixed.z, -320, 408);
     if (player.x > 490 && !(player.z > 258 && player.z < 392)) player.x = 490; // the sea
     player.y = groundH(player.x, player.z);
+    const bi = mountain.bridgeInfoAt(player.x, player.z);
+    if (bi && !bi.gap) player.y = bi.deckY;   // walking the planks of the jembatan bolong
   }
   damar.group.position.set(player.x, player.y, player.z);
   damar.group.rotation.y = player.heading;
   damar.setPose(G.weapon === 2 && input.mouseDown ? 'aim' : 'stand');
   damar.animate(dt, player.speed);
+  damar.group.position.y = player.y + damar.bobY;
+  // Falls: a missing plank, or slipping off the jalur on a steep face, drops
+  // you back to the last Pos touched — the pendaki rule, never a full restart.
+  if (falling > 0) {
+    falling -= dt;
+    player.y -= 16 * dt;
+    damar.group.position.set(player.x, player.y, player.z);
+    if (falling <= 0) respawnAtCheckpoint();
+  } else if (player.z < -100) {
+    const bi = mountain.bridgeInfoAt(player.x, player.z);
+    let fall = !!(bi && bi.gap);
+    // (the basecamp pad's flattened ring is steep but safe ground — no slips there)
+    if (!fall && !bi && mountain.trailDist(player.x, player.z) > 8
+      && Math.hypot(player.x - BASECAMP.x, player.z - BASECAMP.z) > 24) {
+      const g2 = terrainGradient(player.x, player.z);
+      if (Math.hypot(g2.gx, g2.gz) > 0.78) fall = true;
+    }
+    if (fall) { falling = 0.45; audio.thud(0.5, 120, 0.3); }
+  }
   fireCooldown -= dt;
   if (input.mouseDown && fireCooldown <= 0) {
     fireCooldown = 0.22;
@@ -488,7 +597,7 @@ function updateDriving(dt) {
   };
   if (v.z < -4) {
     const grad = terrainGradient(v.x, v.z);
-    const uphill = grad.x * Math.sin(v.heading) + grad.z * Math.cos(v.heading);
+    const uphill = grad.gx * Math.sin(v.heading) + grad.gz * Math.cos(v.heading);
     if (uphill > 0.42 && inp.throttle > 0) inp.throttle = 0;
   }
   const impact = stepVehicle(v, inp, dt, carColliders, vehicles);
@@ -550,9 +659,15 @@ function startGame(fresh) {
       money: 250000, rep: 0, health: 100, armour: 0, stamina: 100,
       hasPistol: false, ammo: 0, reserve: 0, weapon: 1, heat: 0, stars: 0,
       bustMeter: 0, missionIndex: 0, storyDone: false, summit: false, stashesFound: [],
+      water: 100, gear: { bottle: false, torch: false }, bestClimb: null, climbStart: 0,
       clockMin: 17 * 60 + 24, dow: 5,
     });
-    G.stats = { earned: 0, stolen: 0, topSpeed: 0, arrests: 0, deaths: 0, missionsDone: 0, playSeconds: 0, shotsFired: 0, hitsLanded: 0, summits: 0 };
+    G.stats = { earned: 0, stolen: 0, topSpeed: 0, arrests: 0, deaths: 0, missionsDone: 0, playSeconds: 0, shotsFired: 0, hitsLanded: 0, summits: 0, mtFalls: 0 };
+    mountain.resetGear();
+    mountain.board.reset();
+    postsPassed.clear();
+    checkpoint = { t: 0, label: 'BASECAMP' };
+    falling = 0;
     player.x = 104; player.z = 236; player.heading = Math.PI; camYaw = Math.PI;
     exitVehicle(true);
     for (let i = stashMeshes.length - 1; i >= 0; i--) scene.remove(stashMeshes[i].mesh);
@@ -561,6 +676,7 @@ function startGame(fresh) {
     const data = loadSave();
     if (data) applySave(data, player);
     if (G.summit) world.flagPlanted = true;
+    if (G.bestClimb != null) mountain.board.setPlayerBest(G.bestClimb);
     camYaw = player.heading;
   }
   started = true;
@@ -674,7 +790,10 @@ function frame(now) {
         if (G.clockMin >= 1440) { G.clockMin = 0; G.dow = (G.dow + 1) % 7; }
       }
       G.stats.playSeconds += dt;
-      for (const n of [ratna, sari, bimo, darto]) n.human.animate(dt * 0.4, 0.2);
+      for (const n of [ratna, sari, bimo, darto]) {
+        n.human.animate(dt * 0.4, 0.2);
+        n.human.group.position.y = n.baseY + n.human.bobY;
+      }
     }
     updateCamera(dt);
     const tp = currentTarget();
@@ -708,10 +827,11 @@ showTitle();
 if (G.summit) world.flagPlanted = true;
 window.BAYU = {
   G, player, vehicles, police, missions, traffic, scene, camera, renderer,
-  startGame, openPause, hud, world,
+  startGame, openPause, hud, world, mountain, damar,
+  setCamYaw: (v) => { camYaw = v; },
 };
 setupShots({
-  G, player, police, missions, hud, world, vehicles, scene, damar,
+  G, player, police, missions, hud, world, vehicles, scene, damar, mountain,
   startGame, openPause, setChasers, camera,
   setCamYaw: (v) => { camYaw = v; },
   refreshHud: () => hud.update(0.5, {

@@ -14,7 +14,7 @@ export function saveGame(player) {
     localStorage.setItem(KEY, JSON.stringify({
       money: G.money, rep: G.rep, missionIndex: G.missionIndex, storyDone: G.storyDone,
       hasPistol: G.hasPistol, ammo: G.ammo, reserve: G.reserve,
-      health: G.health, armour: G.armour, summit: G.summit,
+      health: G.health, armour: G.armour, summit: G.summit, bestClimb: G.bestClimb,
       stashesFound: G.stashesFound, stats: G.stats,
       clockMin: G.clockMin, dow: G.dow,
       px: player.x, pz: player.z, heading: player.heading,
@@ -37,6 +37,7 @@ export function applySave(data, player) {
   G.ammo = data.ammo; G.reserve = data.reserve;
   G.health = data.health; G.armour = data.armour || 0;
   G.summit = !!data.summit; G.stashesFound = data.stashesFound || [];
+  G.bestClimb = data.bestClimb ?? null;
   Object.assign(G.stats, data.stats || {});
   G.clockMin = data.clockMin || G.clockMin; G.dow = data.dow ?? G.dow;
   player.x = data.px; player.z = data.pz; player.heading = data.heading || 0;

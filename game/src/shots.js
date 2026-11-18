@@ -3,6 +3,7 @@
 
 import { MISSIONS } from './missions.js';
 import { createVehicle } from './vehicles.js';
+import { createHuman } from './actors.js';
 import { groundH } from './city.js';
 
 export function setupShots(ctx) {
@@ -34,6 +35,11 @@ export function setupShots(ctx) {
       vehicles.push(c); cruisers.push(c);
     }
     ctx.damar.group.visible = false;
+    const officer = createHuman({ skin: 0xa06844, shirt: 0x1d3468, pants: 0x16283f, cap: 0x1d3468, hair: 0x14100c, police: true });
+    officer.setPose('aim');
+    officer.group.position.set(442.5, 0, 243);
+    officer.group.rotation.y = 2.6;
+    ctx.scene.add(officer.group);
     police.setStars(4);
     const pin = setInterval(() => {
       hero.x = 448; hero.z = 252; hero.heading = Math.PI;
@@ -48,6 +54,30 @@ export function setupShots(ctx) {
     }, 50);
     setTimeout(() => clearInterval(pin), 6400);
     ready(5800);
+    return;
+  }
+
+  if (name === 'basecamp') {
+    startGame(true);
+    G.money = 2750000; G.rep = 640; G.health = 100; G.clockMin = 17 * 60 + 38;
+    G.gear.bottle = true; G.gear.torch = true; G.water = 82;
+    player.x = 163; player.z = -131; player.heading = -1.86; player.y = groundH(player.x, player.z);
+    ctx.setCamYaw(-1.86);
+    ctx.mountain.stageShot('basecamp');
+    ready(4200);
+    return;
+  }
+
+  if (name === 'mountain') {
+    startGame(true);
+    G.money = 2750000; G.rep = 640; G.health = 100; G.clockMin = 17 * 60 + 47;
+    G.gear.bottle = true; G.gear.torch = true; G.water = 64; G.stamina = 78;
+    ctx.mountain.stageShot('mountain');
+    const bp = ctx.mountain.bridgePointAt(0.425, 0.55);
+    player.x = bp.x; player.z = bp.z; player.y = bp.deckY;
+    player.heading = ctx.mountain.bridgeHeading;
+    ctx.setCamYaw(ctx.mountain.bridgeHeading);
+    ready(4500);
     return;
   }
 

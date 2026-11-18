@@ -15,7 +15,7 @@ export class Hud {
     this.el = {};
     for (const id of ['hud', 'missionPanel', 'missionIdx', 'missionName', 'missionObjective', 'stageLabel', 'stageBar', 'missionDist', 'missionNextText',
       'policePanel', 'policeRows', 'clockDow', 'clockTime', 'moneyLine', 'starsLine', 'insightLine', 'wslot1', 'wslot2', 'ammoLine',
-      'healthFill', 'healthNum', 'armourFill', 'armourNum', 'staminaRow', 'staminaFill', 'staminaNum', 'repLevel', 'repTitle', 'repFill', 'repNow', 'repNext',
+      'healthFill', 'healthNum', 'armourFill', 'armourNum', 'staminaRow', 'staminaFill', 'staminaNum', 'waterRow', 'waterFill', 'waterNum', 'gearLine', 'caveDark', 'repLevel', 'repTitle', 'repFill', 'repNow', 'repNext',
       'vehiclePanel', 'speedBig', 'vehName', 'condFill', 'condNum', 'radioTrack', 'placeCity', 'placeStreet',
       'dialogue', 'dlgName', 'dlgText', 'portrait', 'prompt', 'toast', 'banner', 'bannerBig', 'bannerSub', 'dmgFlash', 'markerTag', 'markerDist',
       'minimap', 'mapCanvas', 'pauseScreen', 'titleScreen']) this.el[id] = $(id);
@@ -79,6 +79,9 @@ export class Hud {
     g.fillText('GUNUNG BAYU', X(SUMMIT.x), Z(SUMMIT.z) - 12);
     g.fillText('BASECAMP', X(BASECAMP.x), Z(BASECAMP.z) + 16);
     for (const t of [0.3, 0.55, 0.8]) { const p = polylinePoint(TRAIL, t); g.fillStyle = '#fff'; g.beginPath(); g.arc(X(p.x), Z(p.z), 2.4, 0, 7); g.fill(); }
+    g.font = '700 8.5px Arial'; g.fillStyle = 'rgba(255,233,176,0.9)';
+    { const bp = polylinePoint(TRAIL, 0.43); g.fillText('JEMBATAN BOLONG', X(bp.x), Z(bp.z) - 7); }
+    { const cp = polylinePoint(TRAIL, 0.65); g.fillText('GOA', X(cp.x), Z(cp.z) - 7); }
     g.font = '800 10.5px Arial'; g.fillStyle = '#fff';
     const places = [['PASAR BARU', 256, 150], ['ALUN-ALUN', 160, 148], ['PELABUHAN', 524, 316], ['BENGKEL RATNA', 96, 214], ['POLRES', 352, 208], ['RS BAYU', 32, 272], ['BAYUMART', 288, 274], ['PANTAI BAYU', 474, 108]];
     for (const [n, x, z] of places) g.fillText(n, X(x), Z(z));
@@ -166,6 +169,7 @@ export class Hud {
     else this.el.prompt.classList.add('hidden');
   }
   flashDamage() { this.el.dmgFlash.style.opacity = 1; setTimeout(() => { this.el.dmgFlash.style.opacity = 0; }, 130); }
+  setCave(f) { this.el.caveDark.style.opacity = f.toFixed(2); }
 
   buildSettingsTab() {
     const div = document.createElement('div');
@@ -198,6 +202,8 @@ export class Hud {
       ['Vehicles stolen', G.stats.stolen],
       ['Top speed', `${Math.round(G.stats.topSpeed)} km/h`],
       ['Summits', `${G.summit ? 1 : 0} / 1 — Gunung Bayu`],
+      ['Best Gunung Bayu climb', G.bestClimb ? `${Math.floor(G.bestClimb / 60)}:${String(Math.round(G.bestClimb % 60)).padStart(2, '0')}` : '—'],
+      ['Falls on the mountain', G.stats.mtFalls || 0],
       ['Cash stashes', `${G.stashesFound.length} / ${STASHES.length}`],
       ['Times busted', G.stats.arrests],
       ['Times wasted', G.stats.deaths],
@@ -226,6 +232,16 @@ export class Hud {
     if (showStamina) {
       this.el.staminaFill.style.width = `${G.stamina}%`;
       this.el.staminaNum.textContent = Math.ceil(G.stamina);
+    }
+    const onMountain = player.z < -55 && player.onFoot;
+    this.el.waterRow.classList.toggle('hidden', !onMountain);
+    this.el.gearLine.classList.toggle('hidden', !onMountain);
+    if (onMountain) {
+      this.el.waterFill.style.width = `${G.gear.bottle ? G.water : 0}%`;
+      this.el.waterNum.textContent = G.gear.bottle ? Math.ceil(G.water) : '0';
+      this.el.gearLine.textContent = G.gear.bottle || G.gear.torch
+        ? `GEAR — Botol: ${G.gear.bottle ? '✓' : '✗'} · Senter: ${G.gear.torch ? '✓' : '✗'}`
+        : 'GEAR — ambil botol + senter di Basecamp!';
     }
     this.drawMinimap(player, ctx.targetPos, police);
 

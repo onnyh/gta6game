@@ -106,7 +106,7 @@ export class Police {
   }
 
   makeOfficer(x, z) {
-    const human = createHuman({ skin: 0xa06844, shirt: 0x1d3468, pants: 0x16283f, cap: 0x1d3468, hair: 0x14100c });
+    const human = createHuman({ skin: 0xa06844, shirt: 0x1d3468, pants: 0x16283f, cap: 0x1d3468, hair: 0x14100c, police: true });
     human.group.position.set(x, groundH(x, z), z);
     this.scene.add(human.group);
     return { human, x, z, heading: 0, shootAt: 0, speed: 6.1, hp: 40, dead: false, y: 0, h: 1.75, r: 0.55, officer: true };
@@ -282,6 +282,7 @@ export class Police {
     o.human.group.position.set(o.x, groundH(o.x, o.z), o.z);
     o.human.group.rotation.y = o.heading;
     o.human.animate(dt, d > 0.4 ? speed : 0);
+    o.human.group.position.y = groundH(o.x, o.z) + o.human.bobY;
     return d;
   }
 
