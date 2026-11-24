@@ -84,9 +84,15 @@ function makeCanvasTexture(draw, w = 128, h = 256) {
   return tex;
 }
 
-// A building facade: rows of windows, some lit, on a tinted wall.
+// Building facades: rows of windows, some lit, on a tinted wall. One
+// texture is generated per paint colour (with a fixed seed, so the town is
+// identical on every visit) and shared by every building of that colour —
+// a dozen textures instead of hundreds.
+const facadeCache = new Map();
 function buildingTexture(baseColor) {
-  return makeCanvasTexture((g, w, h) => {
+  if (facadeCache.has(baseColor)) return facadeCache.get(baseColor);
+  const rand = seededRandom(baseColor.split("").reduce((a, c) => a + c.charCodeAt(0) * 131, 7));
+  const tex = makeCanvasTexture((g, w, h) => {
     g.fillStyle = baseColor;
     g.fillRect(0, 0, w, h);
     const cols = 5;
@@ -95,7 +101,7 @@ function buildingTexture(baseColor) {
     const ch = h / rows;
     for (let i = 0; i < cols; i++) {
       for (let j = 0; j < rows; j++) {
-        const lit = Math.random() < 0.42;
+        const lit = rand() < 0.42;
         g.fillStyle = lit ? "#ffd98a" : "rgba(20, 28, 40, 0.75)";
         g.fillRect(i * cw + cw * 0.22, j * ch + ch * 0.24, cw * 0.56, ch * 0.5);
       }
@@ -103,6 +109,8 @@ function buildingTexture(baseColor) {
     g.fillStyle = "rgba(0,0,0,0.18)";
     g.fillRect(0, h - ch * 0.9, w, ch * 0.9);
   });
+  facadeCache.set(baseColor, tex);
+  return tex;
 }
 
 // Deterministic pseudo-random from a seed, so the city is the same on every
@@ -127,13 +135,14 @@ export function buildWorld(scene) {
   const colliders = []; // {minX, maxX, minZ, maxZ, top} for buildings
   const animated = []; // functions(dt, elapsed) for sea, flag, lamps
 
-  // -- Ground base: scrubland around everything.
+  // -- Ground base: scrubland around everything. It stops at the waterline
+  //    so the lower sea surface is never buried beneath it.
   const base = new THREE.Mesh(
-    new THREE.PlaneGeometry(2400, 2400),
+    new THREE.PlaneGeometry(2400, 1560),
     new THREE.MeshLambertMaterial({ color: 0x77875f })
   );
   base.rotation.x = -Math.PI / 2;
-  base.position.y = -0.08;
+  base.position.set(0, -0.08, SEA_Z - 780);
   base.receiveShadow = true;
   scene.add(base);
 
@@ -218,8 +227,10 @@ export function buildWorld(scene) {
         const cx = x0 + w / 2 + rand() * Math.max(1, x1 - x0 - w);
         const cz = z0 + d / 2 + rand() * Math.max(1, z1 - z0 - d);
         const color = BUILDING_COLORS[Math.floor(rand() * BUILDING_COLORS.length)];
-        const mat = new THREE.MeshLambertMaterial({ map: buildingTexture(color) });
-        const b = new THREE.Mesh(boxGeo, mat);
+        if (!facadeCache.has(`mat:${color}`)) {
+          facadeCache.set(`mat:${color}`, new THREE.MeshLambertMaterial({ map: buildingTexture(color) }));
+        }
+        const b = new THREE.Mesh(boxGeo, facadeCache.get(`mat:${color}`));
         b.scale.set(w, hgt, d);
         b.position.set(cx, hgt / 2, cz);
         b.castShadow = true;
@@ -267,16 +278,16 @@ export function buildWorld(scene) {
 
   // -- Beach and sea.
   const sand = new THREE.Mesh(
-    new THREE.PlaneGeometry(1500, SEA_Z - BEACH_Z + 160),
+    new THREE.PlaneGeometry(1500, SEA_Z - BEACH_Z + 24),
     new THREE.MeshLambertMaterial({ color: 0xe6cf9a })
   );
   sand.rotation.x = -Math.PI / 2;
-  sand.position.set(0, 0.0, (BEACH_Z + SEA_Z) / 2 + 40);
+  sand.position.set(0, 0.0, (BEACH_Z + SEA_Z) / 2 + 6);
   sand.receiveShadow = true;
   scene.add(sand);
 
   const seaMat = new THREE.MeshPhongMaterial({
-    color: 0x1a6f9e, shininess: 160, specular: 0xbfe8ff, transparent: true, opacity: 0.94,
+    color: 0x155f8f, shininess: 90, specular: 0x6fb7e8, transparent: true, opacity: 0.96,
   });
   const sea = new THREE.Mesh(new THREE.PlaneGeometry(2400, 900, 48, 12), seaMat);
   sea.rotation.x = -Math.PI / 2;

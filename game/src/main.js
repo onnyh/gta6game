@@ -144,6 +144,16 @@ const startScreen = document.getElementById("start-screen");
 const bustedScreen = document.getElementById("busted-screen");
 const pauseScreen = document.getElementById("pause-screen");
 
+// Pointer lock, swallowing the promise rejection Chrome raises when the
+// request races a recent exit or lacks a fresh gesture — the game remains
+// fully playable with drag-look either way.
+function lockPointer() {
+  try {
+    const p = canvas.requestPointerLock();
+    if (p && typeof p.catch === "function") p.catch(() => {});
+  } catch { /* drag-look fallback covers it */ }
+}
+
 function startGame() {
   if (state !== "menu") return;
   state = "playing";
@@ -152,13 +162,13 @@ function startGame() {
   hud.setCash(cash);
   audio.ensure();
   missions.start();
-  if (!shotMode && !input.usingTouch) canvas.requestPointerLock();
+  if (!shotMode && !input.usingTouch) lockPointer();
 }
 
 document.getElementById("start-btn").addEventListener("click", startGame);
 canvas.addEventListener("click", () => {
   if (state === "playing" && !shotMode && !input.usingTouch && document.pointerLockElement !== canvas) {
-    canvas.requestPointerLock();
+    lockPointer();
   }
   if (state === "paused") resumeGame();
 });
@@ -169,7 +179,7 @@ function resumeGame() {
   state = "playing";
   pauseScreen.style.display = "none";
   audio.setMuted(false);
-  if (!shotMode && !input.usingTouch) canvas.requestPointerLock();
+  if (!shotMode && !input.usingTouch) lockPointer();
 }
 
 document.addEventListener("pointerlockchange", () => {
@@ -220,7 +230,7 @@ function respawnAfterBust() {
   player.yaw = 0;
   camYaw = 0;
   state = "playing";
-  if (!shotMode && !input.usingTouch) canvas.requestPointerLock();
+  if (!shotMode && !input.usingTouch) lockPointer();
 }
 
 // ---- Cars: getting in and out ----------------------------------------------------
@@ -562,14 +572,16 @@ function stageShot(mode) {
     car.speed = 13;
     enterCar(car);
     police.setWanted(3);
-    // Two patrol cars already on his tail, lights going.
+    // Two patrol cars cutting him off ahead, lights going — pursuers behind
+    // the car would be invisible to the chase camera, so the interception
+    // is staged in front, where their AI swings them around onto his tail.
     for (let i = 0; i < 2; i++) {
       police.spawnCar(car.mesh.position);
       const cop = police.cars[police.cars.length - 1];
-      cop.mesh.position.set(i === 0 ? -3.5 : 3.5, 0, 64 + 19 + i * 11);
-      cop.heading = Math.PI;
-      cop.mesh.rotation.y = Math.PI;
-      cop.speed = 16;
+      cop.mesh.position.set(i === 0 ? -3.5 : 3.5, 0, 64 - 27 - i * 13);
+      cop.heading = Math.PI - 0.3 * (i === 0 ? 1 : -1);
+      cop.mesh.rotation.y = cop.heading;
+      cop.speed = 10;
     }
     camYaw = 0;
   } else if (mode === "mission") {
@@ -586,8 +598,10 @@ function stageShot(mode) {
     camYaw = car.heading + Math.PI;
   } else if (mode === "summit") {
     beginPlay(false);
+    // High on the south-east slope, the whole town spread out below —
+    // the view a climber actually earns near the top of Gunung Bayu.
     const s = world.summitPos;
-    person.group.position.set(s.x + 9, terrainHeight(s.x + 9, s.z + 9), s.z + 9);
+    person.group.position.set(s.x + 28, terrainHeight(s.x + 28, s.z + 28), s.z + 28);
     person.group.rotation.y = Math.PI / 4;
     camYaw = Math.PI + Math.PI / 4;
     player.yaw = camYaw;
@@ -606,8 +620,17 @@ window.__bayu = {
   missions,
   start: () => startGame(),
   pos() {
-    const p = person.group.position;
+    const p = player.inCar ? player.inCar.mesh.position : person.group.position;
     return { x: p.x, y: p.y, z: p.z, inCar: Boolean(player.inCar) };
+  },
+  camInfo() {
+    const dir = new THREE.Vector3();
+    camera.getWorldDirection(dir);
+    return {
+      pos: { x: camera.position.x, y: camera.position.y, z: camera.position.z },
+      dir: { x: dir.x, y: dir.y, z: dir.z },
+      personVisible: person.group.visible,
+    };
   },
   teleport(x, z) {
     person.group.position.set(x, terrainHeight(x, z), z);
