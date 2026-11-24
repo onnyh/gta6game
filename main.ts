@@ -1,8 +1,7 @@
 // Bayu Heat — hand-in program for the make.fun "Make GTA 6" bounty (gta6-01).
 //
 // What this program does, in order:
-//   1. Empties the output directory (MAKEFUN_OUTPUT_DIR, default /output)
-//      of any stale contents, without removing the directory itself.
+//   1. Wipes the output directory (MAKEFUN_OUTPUT_DIR, default /output).
 //   2. Copies this repository's game/ and screenshots/ folders into it.
 //   3. Asks the vendored make.fun library to describe that exact copied tree
 //      as a dossier, under the bounty's caps, and writes dossier.json.
@@ -11,7 +10,7 @@
 // itself, so the graded artifact is byte-for-byte what was handed in and the
 // program is deterministic: two runs over the same commit agree exactly.
 
-import { cpSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildDossier } from "./vendor/makefun-game.ts";
@@ -32,17 +31,9 @@ const DOSSIER_CAPS = {
 } as const;
 
 // Start from an empty output directory so stale files can never leak into
-// the entry from an earlier run. The directory itself is created if missing
-// and then emptied entry by entry; it is never removed.
-//
-// Why never remove the directory itself: on the grader, /output is a
-// bind-mounted volume, and removing a mount point fails with EBUSY, which
-// killed the hand-in run with exit code 1. Emptying the contents works the
-// same on a plain directory and on a mounted one.
+// the entry from an earlier run.
+rmSync(outputDir, { recursive: true, force: true });
 mkdirSync(outputDir, { recursive: true });
-for (const entry of readdirSync(outputDir)) {
-  rmSync(join(outputDir, entry), { recursive: true, force: true });
-}
 
 // Copy the two payload folders verbatim.
 for (const folder of ["game", "screenshots"]) {
